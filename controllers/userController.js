@@ -160,10 +160,53 @@ const getUserById = async (req, res) => {
   }
 };
 
+// @desc    修改密码
+// @route   PUT /api/v1/users/change-password
+// @access  Private
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    // 验证输入
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ code: 400, message: 'All fields are required' });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ code: 400, message: 'New password and confirm password do not match' });
+    }
+
+    // 查找用户
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ code: 404, message: 'User not found' });
+    }
+
+    // 验证当前密码
+    const isMatch = await user.matchPassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({ code: 401, message: 'Current password is incorrect' });
+    }
+
+    // 更新密码
+    user.password = newPassword;
+    await user.save();
+
+    // 返回响应
+    res.status(200).json({
+      code: 200,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    res.status(400).json({ code: 400, message: error.message });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
   getProfile,
   updateProfile,
+  changePassword,
   getUserById
 };

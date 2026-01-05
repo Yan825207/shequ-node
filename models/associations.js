@@ -6,12 +6,16 @@ const Like = require('./Like');
 const Message = require('./Message');
 const Announcement = require('./Announcement');
 const Banner = require('./Banner');
+const Product = require('./Product');
 
 // 设置所有模型关联
 const setupAssociations = () => {
   // Post关联
   Post.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
   Post.hasMany(Comment, { foreignKey: 'postId', as: 'comments' });
+  
+  // Product关联
+  Product.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
   
   // Comment关联
   Comment.belongsTo(User, { foreignKey: 'authorId', as: 'author' });

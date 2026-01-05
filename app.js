@@ -33,6 +33,17 @@ try {
   console.warn('Continuing server startup without database connection');
 }
 
+// 显式导入所有模型，确保它们被sequelize实例识别
+const User = require('./models/User');
+const Post = require('./models/Post');
+const Comment = require('./models/Comment');
+const Like = require('./models/Like');
+const Follow = require('./models/Follow');
+const Message = require('./models/Message');
+const Announcement = require('./models/Announcement');
+const Banner = require('./models/Banner');
+const Product = require('./models/Product');
+
 const setupAssociations = require('./models/associations');
 
 // 创建Express应用
@@ -46,6 +57,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // 静态文件服务 - 带CORS头信息
+const path = require('path');
 app.use('/uploads', (req, res, next) => {
   // 设置CORS头信息
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -57,7 +69,7 @@ app.use('/uploads', (req, res, next) => {
   }
   
   next();
-}, express.static('uploads'));
+}, express.static(path.join(__dirname, 'uploads')));
 
 // 数据库连接
 const connectDatabase = async () => {
@@ -77,8 +89,8 @@ const connectDatabase = async () => {
     // 设置模型关联
     setupAssociations();
     // Skip syncModels temporarily to avoid deadlock issues
-    // await syncModels();
-    console.log('Database connected successfully (model sync skipped)');
+    await syncModels();
+    console.log('Database connected successfully (models synchronized)');
   } catch (error) {
     console.error('Database connection error:', error);
     console.error('Error stack:', error.stack);
@@ -101,6 +113,7 @@ app.use('/api/v1/uploads', require('./routes/uploadRoutes'));
 app.use('/api/v1/messages', require('./routes/messageRoutes'));
 app.use('/api/v1/announcements', require('./routes/announcementRoutes'));
 app.use('/api/v1/banners', require('./routes/bannerRoutes'));
+app.use('/api/v1/products', require('./routes/productRoutes'));
 
 // 根路由
 app.get('/', (req, res) => {
