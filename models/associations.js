@@ -16,10 +16,12 @@ const setupAssociations = () => {
   
   // Product关联
   Product.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
+  Product.hasMany(Comment, { foreignKey: 'productId', as: 'comments' });
   
   // Comment关联
   Comment.belongsTo(User, { foreignKey: 'authorId', as: 'author' });
   Comment.belongsTo(Post, { foreignKey: 'postId', as: 'post' });
+  Comment.belongsTo(Product, { foreignKey: 'productId', as: 'product' });
   Comment.belongsTo(Comment, { foreignKey: 'parentCommentId', as: 'parentComment' });
   Comment.hasMany(Comment, { foreignKey: 'parentCommentId', as: 'replies' });
   

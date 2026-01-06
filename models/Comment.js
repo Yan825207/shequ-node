@@ -25,9 +25,19 @@ const Comment = sequelize.define('Comment', {
   },
   postId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
+    comment: '关联的帖子ID',
     references: {
       model: 'posts',
+      key: 'id'
+    }
+  },
+  productId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: '关联的商品ID',
+    references: {
+      model: 'products',
       key: 'id'
     }
   },

@@ -2,18 +2,19 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const dotenv = require('dotenv');
-const COS = require('cos-nodejs-sdk-v5');
+const cloudinary = require('cloudinary').v2;
+const { PassThrough } = require('stream');
 
 // 确保从当前目录的.env文件加载环境变量
 const envPath = path.join(__dirname, '../.env');
 dotenv.config({ path: envPath });
 
-// 初始化腾讯云COS客户端
-const cos = new COS({
-    SecretId: process.env.COS_SECRET_ID,
-    SecretKey: process.env.COS_SECRET_KEY,
-    // 添加超时设置，避免长时间等待
-    Timeout: 30000 // 30秒超时
+// 配置 Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true // 启用HTTPS
 });
 
 // 配置multer使用内存存储，并增加文件大小限制
@@ -27,19 +28,109 @@ const upload = multer({
     }
 });
 
+// 根据功能类型确定存储文件夹
+const getFolder = (funcType) => {
+    switch(funcType) {
+        case 'avatar':
+            return 'avatars';
+        case 'post':
+            return 'posts';
+        case 'product':
+            return 'products';
+        case 'banner':
+            return 'banners';
+        case 'announcement':
+            return 'announcements';
+        default:
+            return 'uploads';
+    }
+};
+
+// 将中文转换为拼音或英文
+const transliterate = (str) => {
+    // 中文字符范围
+    const chineseRegex = /[\u4e00-\u9fa5]/g;
+    
+    if (!chineseRegex.test(str)) {
+        return str;
+    }
+    
+    // 简单的中文到拼音映射（常用词）
+    const translationMap = {
+        '测试': 'test',
+        '中文': 'chinese',
+        '文件': 'file',
+        '图片': 'image',
+        '头像': 'avatar',
+        '帖子': 'post',
+        '商品': 'product',
+        '广告': 'banner',
+        '公告': 'announcement'
+    };
+    
+    let result = str;
+    for (const [CN, EN] of Object.entries(translationMap)) {
+        result = result.replace(new RegExp(CN, 'g'), EN);
+    }
+    
+    // 移除非打印字符和特殊字符，保留字母、数字、中文和基本符号
+    result = result.replace(/[^a-zA-Z0-9\u4e00-\u9fa5\-_]/g, '');
+    
+    return result;
+};
+
+// 生成安全的 public_id
+const generateSafePublicId = (originalname, uniqueSuffix) => {
+    // 获取文件扩展名
+    const ext = path.extname(originalname);
+    const basename = path.basename(originalname, ext);
+    
+    // 将中文转换为拼音
+    const safeBasename = transliterate(basename);
+    
+    // 使用时间戳和随机数确保唯一性
+    return `file_${uniqueSuffix}`;
+};
+
+// 上传文件到 Cloudinary
+const uploadToCloudinary = (buffer, options) => {
+    return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                resource_type: 'auto',
+                folder: options.folder,
+                public_id: options.publicId,
+                transformation: options.transformation || []
+            },
+            (error, result) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            }
+        );
+
+        // 将 buffer 转换为流并上传
+        const passThrough = new PassThrough();
+        passThrough.end(buffer);
+        passThrough.pipe(uploadStream);
+    });
+};
+
 // 单个文件上传
-const uploadSingleFile = (req, res) => {
+const uploadSingleFile = async (req, res) => {
     console.log('Received single file upload request');
     
     // 检查文件是否存在
     if (!req.file) {
         return res.status(400).json({
             code: 400,
-            message: 'No file uploaded'
+            message: '没有文件上传'
         });
     }
     
-    // 记录文件信息但不打印完整的buffer数据
+    // 记录文件信息
     console.log('File:', {
         fieldname: req.file.fieldname,
         originalname: req.file.originalname,
@@ -48,100 +139,62 @@ const uploadSingleFile = (req, res) => {
         size: req.file.size
     });
     
-    // 获取功能类型参数，默认存储在根目录
+    // 获取功能类型参数
     const funcType = req.body.funcType || req.query.funcType || '';
+    const folder = getFolder(funcType);
     
-    // 根据功能类型确定存储文件夹
-    let folder = '';
-    switch(funcType) {
-        case 'avatar':
-            folder = 'avatars/';
-            break;
-        case 'post':
-            folder = 'posts/';
-            break;
-        case 'product':
-            folder = 'products/';
-            break;
-        case 'banner':
-            folder = 'banners/';
-            break;
-        case 'announcement':
-            folder = 'announcements/';
-            break;
-        default:
-            folder = '';
-    }
-    
-    // 生成唯一的文件名，处理中文文件名
+    // 生成唯一的文件名
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    // 生成安全的文件名（不包含特殊字符）
-    const safeFilename = req.file.originalname.replace(/[\\/:"*?<>|]/g, '');
-    // 使用原始文件名的基本名称加上唯一后缀和扩展名
-    const filename = path.basename(safeFilename, path.extname(safeFilename)) + '-' + uniqueSuffix + path.extname(safeFilename);
-    // 直接使用文件名，让COS SDK自己处理编码
-    const cosKey = folder + filename;
     
-    // 上传到腾讯云COS
-    cos.putObject({
-        Bucket: process.env.COS_BUCKET,
-        Region: process.env.COS_REGION,
-        Key: cosKey,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-        ACL: 'public-read', // 设置文件为公共读权限
-        // 为大文件添加分块上传设置
-        SliceSize: 1024 * 1024 * 5 // 5MB分块
-    }, (err, data) => {
-        if (err) {
-            console.error('COS upload error:', err);
-            return res.status(500).json({
-                code: 500,
-                message: 'File upload failed',
-                error: err.message
-            });
-        }
+    try {
+        // 上传到 Cloudinary
+        const result = await uploadToCloudinary(req.file.buffer, {
+            folder: folder,
+            publicId: generateSafePublicId(req.file.originalname, uniqueSuffix)
+        });
         
-        // 构建COS文件URL，只对文件名部分进行编码，保持路径分隔符
-        const fileUrl = `${process.env.COS_BASE_URL}/${folder}${encodeURIComponent(filename)}`;
+        console.log('Cloudinary upload successful:', result.public_id);
         
         res.status(200).json({
             code: 200,
-            message: 'File uploaded successfully',
+            message: '文件上传成功',
             data: {
-                filename: filename,
-                originalname: req.file.originalname,
-                url: fileUrl,
-                preview_url: fileUrl,
-                size: req.file.size,
+                filename: req.file.originalname,
+                url: result.secure_url,
+                preview_url: result.secure_url,
+                size: result.bytes,
                 mimetype: req.file.mimetype,
-                folder: folder
+                folder: folder,
+                public_id: result.public_id,
+                format: result.format,
+                width: result.width,
+                height: result.height,
+                resource_type: result.resource_type
             }
         });
-    });
-};
-
-// 处理中文文件名的函数
-const handleChineseFilename = (filename) => {
-    // 移除文件名中的特殊字符
-    const cleanedFilename = filename.replace(/[\\/:"*?<>|]/g, '');
-    // 使用URL编码处理整个文件名
-    return encodeURIComponent(cleanedFilename);
+    } catch (error) {
+        console.error('Cloudinary upload error:', error);
+        res.status(500).json({
+            code: 500,
+            message: '文件上传失败',
+            error: error.message
+        });
+    }
 };
 
 // 多个文件上传
-const uploadMultipleFiles = (req, res) => {
+const uploadMultipleFiles = async (req, res) => {
     console.log('Received multiple files upload request');
     
     // 检查文件是否存在
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({
             code: 400,
-            message: 'No files uploaded'
+            message: '没有文件上传'
         });
     }
     
-    // 记录文件信息但不打印完整的buffer数据
+    // 记录文件信息
     console.log('Files count:', req.files.length);
     req.files.forEach((file, index) => {
         console.log(`File ${index + 1}:`, {
@@ -153,91 +206,52 @@ const uploadMultipleFiles = (req, res) => {
         });
     });
     
-    // 获取功能类型参数，默认存储在根目录
+    // 获取功能类型参数
     const funcType = req.body.funcType || req.query.funcType || '';
+    const folder = getFolder(funcType);
     
-    // 根据功能类型确定存储文件夹
-    let folder = '';
-    switch(funcType) {
-        case 'avatar':
-            folder = 'avatars/';
-            break;
-        case 'post':
-            folder = 'posts/';
-            break;
-        case 'product':
-            folder = 'products/';
-            break;
-        case 'banner':
-            folder = 'banners/';
-            break;
-        case 'announcement':
-            folder = 'announcements/';
-            break;
-        default:
-            folder = '';
-    }
-    
-    // 使用Promise.all来处理所有文件上传，确保所有文件上传完成后再发送响应
-    const uploadPromises = req.files.map(file => {
-        return new Promise((resolve, reject) => {
-            // 生成唯一的文件名，处理中文文件名
+    try {
+        // 使用 Promise.all 处理所有文件上传
+        const uploadPromises = req.files.map(async (file) => {
             const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-            // 生成安全的文件名（不包含特殊字符）
-            const safeFilename = file.originalname.replace(/[\/:"*?<>|]/g, '');
-            // 使用原始文件名的基本名称加上唯一后缀和扩展名
-            const filename = path.basename(safeFilename, path.extname(safeFilename)) + '-' + uniqueSuffix + path.extname(safeFilename);
-            // 直接使用文件名，让COS SDK自己处理编码
-            const cosKey = folder + filename;
             
-            // 上传到腾讯云COS
-            cos.putObject({
-                Bucket: process.env.COS_BUCKET,
-                Region: process.env.COS_REGION,
-                Key: cosKey,
-                Body: file.buffer,
-                ContentType: file.mimetype,
-                ACL: 'public-read', // 设置文件为公共读权限
-                // 为大文件添加分块上传设置
-                SliceSize: 1024 * 1024 * 5 // 5MB分块
-            }, (err, data) => {
-                if (err) {
-                    console.error(`File upload failed (${file.originalname}):`, err);
-                    reject(err);
-                } else {
-                    // 构建COS文件URL，只对文件名部分进行编码，保持路径分隔符
-                    const fileUrl = `${process.env.COS_BASE_URL}/${folder}${encodeURIComponent(filename)}`;
-                    resolve({
-                        filename: filename, // 显示原始文件名（不包含特殊字符）
-                        originalname: file.originalname, // 显示原始中文文件名
-                        url: fileUrl,
-                        preview_url: fileUrl,
-                        size: file.size,
-                        mimetype: file.mimetype,
-                        folder: folder
-                    });
-                }
+            const result = await uploadToCloudinary(file.buffer, {
+                folder: folder,
+                publicId: generateSafePublicId(file.originalname, uniqueSuffix)
             });
+            
+            return {
+                filename: file.originalname,
+                url: result.secure_url,
+                preview_url: result.secure_url,
+                size: result.bytes,
+                mimetype: file.mimetype,
+                folder: folder,
+                public_id: result.public_id,
+                format: result.format,
+                width: result.width,
+                height: result.height,
+                resource_type: result.resource_type
+            };
         });
-    });
-    
-    // 处理所有上传结果
-    Promise.all(uploadPromises)
-        .then(results => {
-            res.status(200).json({
-                code: 200,
-                message: 'Files uploaded successfully',
-                data: { files: results }
-            });
-        })
-        .catch(err => {
-            console.error('Multiple files upload failed:', err);
-            res.status(500).json({
-                code: 500,
-                message: 'Files upload failed',
-                error: err.message
-            });
+        
+        const results = await Promise.all(uploadPromises);
+        
+        console.log('All files uploaded successfully');
+        
+        res.status(200).json({
+            code: 200,
+            message: '所有文件上传成功',
+            data: { files: results }
         });
+    } catch (error) {
+        console.error('Multiple files upload failed:', error);
+        res.status(500).json({
+            code: 500,
+            message: '文件上传失败',
+            error: error.message
+        });
+    }
 };
 
 module.exports = {

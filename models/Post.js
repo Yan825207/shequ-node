@@ -39,8 +39,8 @@ const Post = sequelize.define('Post', {
     defaultValue: 0
   },
   category: {
-    type: DataTypes.ENUM('生活分享', '求助', '通知', '活动', '其他'),
-    defaultValue: '生活分享'
+    type: DataTypes.ENUM('公告', '生活', '求助', '活动', '其他'),
+    defaultValue: '生活'
   },
   views: {
     type: DataTypes.INTEGER,

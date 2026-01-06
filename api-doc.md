@@ -418,7 +418,7 @@ http://localhost:5000/api/v1
 |-------|------|------|------|
 | title | string | 是 | 帖子标题 |
 | content | string | 是 | 帖子内容 |
-| category | string | 是 | 帖子分类 |
+| category | string | 是 | 帖子分类（可选值：公告、生活、求助、活动、其他） |
 | images | file[] 或 string[] | 否 | 图片文件（最多6张）或图片地址数组 |
 
 **请求头**:
@@ -1640,3 +1640,14 @@ GET /api/v1/follows/check/2
 └── utils/                # 工具函数
     └── database.js           # 数据库连接
 ```
+
+
+
+
+{
+  "name": "CommunityApp",
+  "description": "A cross-platform community application built with UniApp and Node.js.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

@@ -43,8 +43,8 @@ const Product = sequelize.define('Product', {
     defaultValue: []
   },
   category: {
-    type: DataTypes.ENUM('电子产品', '家居用品', '服装配饰', '书籍音像', '运动户外', '其他'),
-    defaultValue: '其他'
+    type: DataTypes.ENUM('闲置', '电子产品', '家居用品', '服装配饰', '书籍音像', '运动户外', '其他'),
+    defaultValue: '闲置'
   },
   status: {
     type: DataTypes.ENUM('全新', '九成新', '八成新', '七成新', '六成新及以下'),
