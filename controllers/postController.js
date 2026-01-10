@@ -1,6 +1,8 @@
 const Post = require('../models/Post');
 const User = require('../models/User');
 const Favorite = require('../models/Favorite');
+const Like = require('../models/Like');
+const Comment = require('../models/Comment');
 
 // @desc    创建帖子
 // @route   POST /api/v1/posts
@@ -103,19 +105,53 @@ const getAllPosts = async (req, res) => {
       userFavorites = favorites.map(fav => fav.postId);
     }
 
-    // 为每个帖子添加收藏状态
-    const postsWithFavoriteStatus = posts.map(post => {
+    // 为每个帖子添加收藏状态、点赞数量、评论数量和是否点赞
+    const postsWithAdditionalData = await Promise.all(posts.map(async post => {
       const postData = post.toJSON();
+      
+      // 添加收藏状态
       postData.isFavorite = userFavorites.includes(postData.id);
+      
+      // 查询点赞数量
+      const likeCount = await Like.count({
+        where: {
+          targetId: postData.id,
+          targetType: 'post'
+        }
+      });
+      postData.likesCount = likeCount;
+      
+      // 查询评论数量
+      const commentCount = await Comment.count({
+        where: {
+          postId: postData.id
+        }
+      });
+      postData.commentsCount = commentCount;
+      
+      // 查询当前用户是否点赞
+      if (req.user) {
+        const isLiked = await Like.findOne({
+          where: {
+            userId: req.user.id,
+            targetId: postData.id,
+            targetType: 'post'
+          }
+        });
+        postData.isLiked = !!isLiked;
+      } else {
+        postData.isLiked = false;
+      }
+      
       return postData;
-    });
+    }));
 
     // 返回响应
     res.status(200).json({
       code: 200,
       message: 'Posts retrieved successfully',
       data: {
-        list: postsWithFavoriteStatus,
+        list: postsWithAdditionalData,
         pagination: {
           total,
           page: Number(page),
@@ -151,7 +187,12 @@ const getPostById = async (req, res) => {
 
     // 检查用户是否已收藏该帖子
     let isFavorite = false;
+    let isLiked = false;
+    let likesCount = 0;
+    let commentsCount = 0;
+    
     if (req.user) {
+      // 查询收藏状态
       const favorite = await Favorite.findOne({
         where: {
           userId: req.user.id,
@@ -159,11 +200,39 @@ const getPostById = async (req, res) => {
         }
       });
       isFavorite = !!favorite;
+      
+      // 查询点赞状态
+      const like = await Like.findOne({
+        where: {
+          userId: req.user.id,
+          targetId: post.id,
+          targetType: 'post'
+        }
+      });
+      isLiked = !!like;
     }
+    
+    // 查询点赞数量
+    likesCount = await Like.count({
+      where: {
+        targetId: post.id,
+        targetType: 'post'
+      }
+    });
+    
+    // 查询评论数量
+    commentsCount = await Comment.count({
+      where: {
+        postId: post.id
+      }
+    });
 
-    // 为帖子添加收藏状态
+    // 为帖子添加额外数据
     const postData = post.toJSON();
     postData.isFavorite = isFavorite;
+    postData.isLiked = isLiked;
+    postData.likesCount = likesCount;
+    postData.commentsCount = commentsCount;
 
     // 返回响应
     res.status(200).json({

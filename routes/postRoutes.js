@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { protect } = require('../middleware/auth');
+const { protect, optionalProtect } = require('../middleware/auth');
 const {
   getAllPosts,
   getPostById,
@@ -35,9 +35,9 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // 公共路由
-router.get('/', getAllPosts);
-router.get('/:id', getPostById);
-router.get('/user/:userId', getUserPosts);
+router.get('/', optionalProtect, getAllPosts);
+router.get('/:id', optionalProtect, getPostById);
+router.get('/user/:userId', optionalProtect, getUserPosts);
 router.get('/categories/list', getPostCategories);
 
 // 私有路由

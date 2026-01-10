@@ -33,6 +33,31 @@ const protect = async (req, res, next) => {
   }
 };
 
+// 可选认证中间件 - 用于公开接口但需要知道用户是否登录
+const optionalProtect = async (req, res, next) => {
+  let token;
+
+  // 检查Authorization头
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      // 提取token
+      token = req.headers.authorization.split(' ')[1];
+
+      // 验证token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // 获取用户信息，排除密码
+      req.user = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
+    } catch (error) {
+      // 可选认证，token无效不影响请求继续
+      console.error('Token validation error in optional protect:', error);
+    }
+  }
+
+  // 无论是否有有效token，都继续处理请求
+  next();
+};
+
 // 角色授权中间件
 const authorize = (...roles) => {
   return (req, res, next) => {
@@ -43,4 +68,4 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { protect, authorize };
+module.exports = { protect, optionalProtect, authorize };
