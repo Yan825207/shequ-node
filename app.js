@@ -145,4 +145,12 @@ const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0'; // 监听所有网络接口
 app.listen(PORT, HOST, () => {
   console.log(`Server is running on http://${HOST}:${PORT}`);
+  
+  // 初始化定时任务（在服务器启动后）
+  try {
+    const { initializeCronJobs } = require('./utils/cronService');
+    initializeCronJobs();
+  } catch (error) {
+    console.error('初始化定时任务失败:', error.message);
+  }
 });
